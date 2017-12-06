@@ -1,0 +1,167 @@
+---
+title: "CourseRA- Practical Machine Learning"
+author: "DFeron"
+date: "December 1, 2017"
+output: html_document
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+td {  /* Table  */
+  font-size: 8px;
+}
+h1.title {
+  font-size: 38px;
+  color: Black;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: DarkBlue;
+}
+h2 { /* Header 2 */
+    font-size: 22px;
+  color: DarkBlue;
+}
+h3 { /* Header 3 */
+  font-size: 18px;
+  font-family: "Times New Roman", Times, serif;
+  color: DarkBlue;
+}
+code.r{ /* Code block */
+    font-size: 12px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 14px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Background
+Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+##Read Data
+```{r Dataprep, echo=FALSE}
+rm(list=ls())
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+
+#train.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#test.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#download.file(train.url, destfile = "C:/RTraining/RWorkingDir-DMF/CourseRA/Course8/Week4/pml-training.csv")
+#download.file(test.url, destfile = "C:/RTraining/RWorkingDir-DMF/CourseRA/Course8/Week4/pml-testing.csv")
+
+train<- read.csv("C:/R Training/RWorkingDir-DMF/CourseRA/Course8/Week4/pml-training.csv")
+test <- read.csv("C:/R Training/RWorkingDir-DMF/CourseRA/Course8/Week4/pml-testing.csv")
+```
+
+#Loading Data and Cleaning Data
+```{r Load & Clean Data, echo= TRUE}
+#Set Training Data Set to 70% of the data
+in_train  <- createDataPartition(train$classe, p=0.7, list=FALSE)
+train_data <- train[in_train, ]
+test_data  <- train[-in_train, ]
+dim(train_data)
+dim(test_data)
+
+#Remove variables w/ ~0 variance
+near_zero <- nearZeroVar(train_data)
+train_data <- train_data[, -near_zero]
+test_data  <- test_data[, -near_zero]
+dim(train_data)
+dim(test_data)
+
+#Remove variables that are more than 95% NA
+mostly_NA    <- sapply(train_data, function(x) mean(is.na(x))) > 0.95
+train_data <- train_data[, mostly_NA==FALSE]
+test_data  <- test_data[, mostly_NA==FALSE]
+dim(train_data)
+dim(test_data)
+
+#remove variables that are for identification only, not informative
+train_data <- train_data[, -(1:5)]
+test_data  <- test_data[, -(1:5)]
+dim(train_data)
+dim(test_data)
+```
+
+#Correlation Analysis: performed before modeling
+```{r Correlation, echo= TRUE}
+cor_matrix <- cor(train_data[, -54])
+corrplot(cor_matrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.75, tl.col = "black")
+print("As the key indicates, there are only a few highly correlated variables in the data.  Therefore we do not need to account for correlation among the variables in the remainder of this analysis.")
+```
+
+
+#Prediction Modeling- Random Forest
+```{r Random Forest, echo= TRUE}
+#Check model fit
+set.seed(12345)
+control_randfor <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modfit_rf <- train(classe ~ ., data=train_data, method="rf",
+                          trControl=control_randfor)
+modfit_rf$finalModel
+
+#Run prediction on Test data
+predict_randfor <- predict(modfit_rf, newdata=test_data)
+conf_mat_rf <- confusionMatrix(predict_randfor, test_data$classe)
+conf_mat_rf
+
+#Plot results of test prediction
+plot(conf_mat_rf$table, col = conf_mat_rf$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(conf_mat_rf$overall['Accuracy'], 4)))
+```
+
+#Prediction Modeling- Decision Trees
+```{r Decision Trees, echo= TRUE}
+#Check model fit
+set.seed(12345)
+modfit_dt <- rpart(classe ~ ., data=train_data, method="class")
+fancyRpartPlot(modfit_dt)
+
+#Run prediction on Test data
+predict_dt <- predict(modfit_dt, newdata=test_data, type="class")
+conf_mat_dt <- confusionMatrix(predict_dt, test_data$classe)
+conf_mat_dt
+
+plot(conf_mat_dt$table, col = conf_mat_dt$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(conf_mat_dt$overall['Accuracy'], 4)))
+```
+
+#Summary
+```{r Summary, echo= FALSE}
+print("Of the two modeling techniques used above (Random Forest, Decision Tree), the accuracy of each is .9968 and .7368 respectively.  Since Random Forest is significantly more accurate than the Decision Tree method, we will use that to predict the 20 quiz results.")
+```
+
+#Predict Test
+```{r Predict Test, echo = TRUE}
+predict_test <- predict(modfit_rf, newdata=test)
+predict_test
+```
+
